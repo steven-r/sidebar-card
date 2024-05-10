@@ -5,7 +5,7 @@ import babel from '@rollup/plugin-babel';
 import terser from '@rollup/plugin-terser';
 import serve from 'rollup-plugin-serve';
 import json from '@rollup/plugin-json';
-
+import { sep } from 'path';
 // eslint-disable-next-line no-undef
 const dev = process.env.ROLLUP_WATCH;
 
@@ -20,10 +20,11 @@ const serveopts = {
   sourcemap: false
 };
 
+
 const plugins = [
   nodeResolve({sourcemap: false}),
   commonjs({sourcemap: false}),
-  typescript(),
+  typescript({}),
   json({sourcemap: false}),
   babel({
     babelHelpers: 'bundled',
@@ -46,5 +47,14 @@ export default [
       sourcemap: false
     },
     plugins: [...plugins],
+    onwarn(warning, warn) {
+      //console.debug('warning', warning);
+      if (warning.code === 'CIRCULAR_DEPENDENCY') {
+          if(warning.message.includes(`${sep}luxon${sep}`)) {
+              return;
+          }
+      }
+      warn(warning);
+    }
   },
 ];

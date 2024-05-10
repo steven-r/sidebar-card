@@ -1,7 +1,7 @@
 {
-  "name": "boilerplate-card",
+  "name": "sidebar",
   "version": "1.1.7",
-  "description": "Lovelace boilerplate-card",
+  "description": "Sidebar",
   "keywords": [
     "home-assistant",
     "homeassistant",
@@ -10,7 +10,8 @@
     "lovelace",
     "custom-cards"
   ],
-  "module": "boilerplate-card.js",
+  "type": "module",
+  "module": "sidebar.js",
   "repository": "git@github.com:custom_cards/boilerplate-card.git",
   "author": "Ian Richardson <iantrich@gmail.com>",
   "license": "MIT",
@@ -18,48 +19,39 @@
     "@ctrl/tinycolor": "^4.1.0",
     "card-tools": "github:thomasloven/lovelace-card-tools",
     "custom-card-helpers": "^1.9.0",
-    "home-assistant-js-websocket": "^9.2.1",
+    "home-assistant-js-websocket": "^9.3.0",
     "homeassistant": "^0.2.0",
     "lit-element": "^4.0.5",
     "lit-html": "^3.1.3"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.4",
-    "@babel/plugin-proposal-decorators": "^7.24.1",
+    "@babel/core": "^7.24.5",
     "@babel/plugin-transform-class-properties": "^7.24.1",
-    "@eslint/js": "^9.1.1",
+    "@babel/plugin-proposal-decorators": "^7.24.1",
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-node-resolve": "15.2.3",
+    "@rollup/plugin-terser": "0.4.4",
     "@rollup/plugin-typescript": "^11.1.6",
-    "@types/luxon": "^3.4.2",
-    "acorn": "^8.11.3",
-    "eslint": "^9.1.1",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-prettier": "^5.1.3",
-    "eslint-plugin-react": "^7.34.1",
-    "globals": "^15.0.0",
-    "lodash": ">=4.17.21",
-    "minimist": "^1.2.8",
-    "prettier": "^3.2.5",
-    "rollup": "^4.16.3",
+    "@typescript-eslint/eslint-plugin": "^7.8.0",
+    "@typescript-eslint/parser": "^7.8.0",
+    "eslint": "^8.52.0",
+    "globals": "^15.1.0",
+    "prettier": "^1.18.2",
+    "rollup": "^4.17.2",
     "rollup-plugin-serve": "^1.1.1",
-    "rollup-plugin-uglify": "^6.0.4",
-    "serialize-javascript": "^6.0.2",
-    "typescript": "^5.4.5",
-    "typescript-eslint": "^7.7.1"
+    "typescript": "^5.4.5"
   },
   "peerDependencies": {
     "luxon": "^3.4.4"
   },
   "scripts": {
     "start": "rollup -c --watch",
-    "build": "npm run lint && npm run rollup",
+    "build": "pnpm run lint && pnpm run rollup",
     "lint": "eslint src/*.ts",
-    "rollup": "rollup -c"
+    "rollup": "rollup -c",
+    "start:hass": "docker run --rm -p8123:8123 -v ${PWD}/.hass_dev:/config homeassistant/home-assistant:beta",
+    "start:hass-cmd": "docker run --rm -p8123:8123 -v  %cd%/.hass_dev:/config homeassistant/home-assistant:beta"
   }
 }
