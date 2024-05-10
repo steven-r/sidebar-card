@@ -5,6 +5,10 @@ sidebar:
   date: true
   width: 25
   debug: true
+  bottomCard:
+    type: entity
+    cardOptions:
+      entity: light.bed_light
   sidebarMenu:
     - action: navigate
       navigation_path: "/lovelace/home"

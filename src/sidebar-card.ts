@@ -26,9 +26,6 @@ import { forwardHaptic, HomeAssistant, navigate, toggleEntity } from 'custom-car
 // ###   The actual Sidebar Card element
 // ##########################################################################################
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const HELPERS = (window as any).loadCardHelpers ? (window as any).loadCardHelpers() : undefined;
-
 interface BottomCard {
   type: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +47,7 @@ interface SidebarConfig {
   hideOnPath: string[];
 }
 
+
 class SidebarCard extends LitElement {
   /* **************************************** *
    *        Element's local properties        *
@@ -69,6 +67,7 @@ class SidebarCard extends LitElement {
   dateFormat = 'DD MMMM';
   bottomCard?: BottomCard = undefined;
   CUSTOM_TYPE_PREFIX = 'custom:';
+  _helpers: any = null;
 
   /* **************************************** *
    *        Element's public properties       *
@@ -82,6 +81,10 @@ class SidebarCard extends LitElement {
     };
   }
 
+  private async loadCardHelpers(): Promise<void> {
+    if (this._helpers) return;
+		this._helpers = await (window as any).loadCardHelpers();
+	}
   /* **************************************** *
    *           Element constructor            *
    * **************************************** */
@@ -332,7 +335,8 @@ class SidebarCard extends LitElement {
           if (tag.startsWith(this.CUSTOM_TYPE_PREFIX)) tag = tag.substr(this.CUSTOM_TYPE_PREFIX.length);
           else tag = `hui-${tag}-card`;
 
-          const cardElement = await HELPERS.createCardElement(card);
+          await this.loadCardHelpers();
+          const cardElement = await this._helpers.createCardElement(card);
           setTimeout(function () {
             if (cardElement.setConfig) {
               cardElement.setConfig(card);
