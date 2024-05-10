@@ -3,12 +3,15 @@
 # Sidebar card [WIP]
 This card adds a sidebar to your interface which you can configure globally so every page has the sidebar. It can replace your top navigation but can also give extra functionality.
 
+This fork ist based on the work from https://github.com/DBuit/sidebar-card. You might get him a coffee: 
+
 <a href="https://www.buymeacoffee.com/ZrUK14i" target="_blank"><img height="41px" width="167px" src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee"></a>
 
 ## Installation instructions
 
-**HACS installation:**
-Go to the hacs store and use the repo url `https://github.com/DBuit/sidebar-card` and add this as a custom repository under settings.
+**HACS installation**
+
+Go to the hacs store and use the repo url `https://github.com/steven-r/sidebar-card` and add this as a custom repository under settings.
 
 Add the following to your ui-lovelace.yaml:
 ```yaml
@@ -18,6 +21,7 @@ resources:
 ```
 
 **Manual installation:**
+
 Copy the .js file from the dist directory to your www directory and add the following to your ui-lovelace.yaml file:
 
 ```yaml
@@ -28,8 +32,9 @@ resources:
 
 ## Configuration
 
-The YAML configuration happens at the root of your Lovelace config under sidebar: at the same level as resources: and views:. Example:
+The YAML configuration happens at the root of your Lovelace config under `sidebar:` at the same level as `resources:` and `views:`.
 
+Example:
 ```
 resources:
   - url: /local/sidebar-card.js?v=0.0.1
@@ -42,18 +47,18 @@ views:
 
 ### Main Options
 
-Under sidebar you can configure the following options:
+Under `sidebar` you can configure the following options:
 
 | Name | Type | Default | Supported options | Description |
 | -------------- | ----------- | ------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title` | string | optional | `Title` | Title to show in the sidebar |
+| `title` | string | optional | _`string`_ | Title to show in the sidebar |
 | `clock` | boolean | optional | `true` | Show analog clock in sidebar |
 | `digitalClock` | boolean | optional | `true` | Show digital clock in sidebar |
 | `digitalClockWithSeconds` | boolean | optional | `true` | If digitalClock is enabled you can also enable to show seconds |
 | `twelveHourVersion` | boolean | optional | `false` | If digitalClock is enabled you can also enable this to 12 hour version |
 | `period` | boolean | optional | `false` | If twelveHourVersion is enabled you can enable this to show 'AM' or 'PM' |
 | `date` | boolean | optional | `false` | If date is enabled it will display the current date |
-| `dateFormat` | boolean | string | `DD MMMM` | If date is enabled you define how it should show the date with dateFormat, to see the options check this url: https://momentjs.com/docs/#/parsing/string-format/ |
+| `dateFormat` | boolean | string | `DD` | If date is enabled you define how it should show the date with dateFormat, to see the options check this url: https://moment.github.io/luxon/#/formatting?id=table-of-tokens |
 | `width` | object | optional | see info below | The width of the sidebar in percentages for different screens |
 | `hideTopMenu` | boolean | optional | `true` | Hide the top home assistant menu |
 | `hideHassSidebar` | boolean | optional | `true` | Hide the home assistant sidebar |
@@ -69,7 +74,10 @@ Under sidebar you can configure the following options:
 
 
 When using hideTopMenu and/or hideHassSidebar you can disable this by adding `?sidebarOff` to the url.
-For example you get this url: https://myhomeassistant.duckdns.org/lovelace/home?sidebarOff
+For example you get this url: 
+```
+https://<myhass-url>/lovelace/home?sidebarOff
+```
 
 ##### Width
 
@@ -233,5 +241,10 @@ sidebar:
 
 ### Screenshots
 
+Default:
+
 ![Screenshot default](screenshot-default.png)
+
+Styled:
+
 ![Screenshot styled](screenshot-styled.png)
