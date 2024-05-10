@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------------------------------
 //  SIDEBAR-CARD
 // ------------------------------------------------------------------------------------------
-//  https://github.com/DBuit/sidebar-card
+//  https://github.com/steven-r/sidebar-card
 // ------------------------------------------------------------------------------------------
 
 // ##########################################################################################
@@ -106,7 +106,6 @@ class SidebarCard extends LitElement {
     const title = 'title' in this.config ? this.config.title : false;
     const addStyle = 'style' in this.config;
 
-    log2console("render", "Start with " + JSON.stringify(this.config));
     this.clock = this.config.clock ? this.config.clock : false;
     this.digitalClock = this.config.digitalClock ? this.config.digitalClock : false;
     this.digitalClockWithSeconds = this.config.digitalClockWithSeconds ? this.config.digitalClockWithSeconds : false;
@@ -410,8 +409,8 @@ class SidebarCard extends LitElement {
           const [entity, state] = this.getState(tapAction);
           const activeEl = this.shadowRoot!.querySelector('ul.sidebarMenu li[data-entity="' + entity.entity_id + '"]');
           if (activeEl) {
-            activeEl.classList.remove(state == 'on' ? 'off' : 'on');
-            activeEl.classList.add(state);
+            activeEl.classList.remove('off', 'on');
+            activeEl.classList.add(state == 'on' ? 'off': 'on');
           }
           forwardHaptic('success');
         }
