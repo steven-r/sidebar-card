@@ -17,11 +17,10 @@ const SIDEBAR_CARD_VERSION = '0.1.9.7.0';
 
 import { css, html, LitElement } from 'lit-element';
 import { moreInfo } from 'card-tools/src/more-info';
-import { hass, provideHass, lovelace } from 'card-tools/src/hass';
+import { hass, provideHass } from 'card-tools/src/hass';
 import { subscribeRenderTemplate } from 'card-tools/src/templates';
 import { DateTime } from 'luxon';
 import { forwardHaptic, HomeAssistant, navigate, toggleEntity } from 'custom-card-helpers';
-import { SidebarConfig } from './types';
 
 // ##########################################################################################
 // ###   The actual Sidebar Card element
@@ -37,6 +36,20 @@ interface BottomCard {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cardOptions: any;
 }
+
+interface ItemNumberList {
+  [key: string]: number;
+}
+
+interface SidebarConfig {
+  showTopMenuOnMobile: boolean;
+  hideTopMenu: boolean;
+  breakpoints: ItemNumberList;
+  desktop: number;
+  width: ItemNumberList;
+  hideOnPath: string[];
+}
+
 class SidebarCard extends LitElement {
   /* **************************************** *
    *        Element's local properties        *
@@ -76,7 +89,11 @@ class SidebarCard extends LitElement {
   constructor() {
     super();
   }
-
+  
+  getState(sidebarMenuItem) {
+    const entity = sidebarMenuItem.state && this.hass?.states[sidebarMenuItem.state];
+    return [ entity, entity && (entity.state ?? '') ];
+  }
   /* **************************************** *
    *   Element's HTML renderer (lit-element)  *
    * **************************************** */
@@ -86,13 +103,14 @@ class SidebarCard extends LitElement {
     const title = 'title' in this.config ? this.config.title : false;
     const addStyle = 'style' in this.config;
 
+    log2console("render", "Start with " + JSON.stringify(this.config));
     this.clock = this.config.clock ? this.config.clock : false;
     this.digitalClock = this.config.digitalClock ? this.config.digitalClock : false;
     this.digitalClockWithSeconds = this.config.digitalClockWithSeconds ? this.config.digitalClockWithSeconds : false;
     this.twelveHourVersion = this.config.twelveHourVersion ? this.config.twelveHourVersion : false;
     this.period = this.config.period ? this.config.period : false;
     this.date = this.config.date ? this.config.date : false;
-    this.dateFormat = this.config.dateFormat ? this.config.dateFormat : 'DD MMMM';
+    this.dateFormat = this.config.dateFormat ? this.config.dateFormat : 'DD';
     this.bottomCard = this.config.bottomCard ? this.config.bottomCard : null;
     this.updateMenu = Object.prototype.hasOwnProperty.call(this.config, 'updateMenu') ? this.config.updateMenu : true;
 
@@ -137,8 +155,10 @@ class SidebarCard extends LitElement {
           ? html`
               <ul class="sidebarMenu">
                 ${sidebarMenu.map((sidebarMenuItem) => {
+                  const [entity, state] = this.getState(sidebarMenuItem);
+
                   return html`
-                    <li @click="${(e) => this._menuAction(e)}" class="${sidebarMenuItem.state && this.hass?.states[sidebarMenuItem.state].state != 'off' && this.hass?.states[sidebarMenuItem.state].state != 'unavailable' ? 'active' : ''}" data-type="${sidebarMenuItem.action}" data-path="${sidebarMenuItem.navigation_path ? sidebarMenuItem.navigation_path : ''}" data-menuitem="${JSON.stringify(sidebarMenuItem)}">
+                    <li @click="${(e) => this._menuAction(e)}" class="${state}" data-entity=${entity ? entity.entity_id : ''} data-type="${sidebarMenuItem.action}" data-path="${sidebarMenuItem.navigation_path ? sidebarMenuItem.navigation_path : ''}" data-menuitem="${JSON.stringify(sidebarMenuItem)}">
                       <span>${sidebarMenuItem.name}</span>
                       ${sidebarMenuItem.icon
                         ? html`
@@ -359,7 +379,6 @@ class SidebarCard extends LitElement {
     if ((e.target.dataset && e.target.dataset.menuitem) || (e.target.parentNode.dataset && e.target.parentNode.dataset.menuitem)) {
       const menuItem = JSON.parse(e.target.dataset.menuitem || e.target.parentNode.dataset.menuitem);
       this._customAction(menuItem);
-      this._updateActiveMenu();
     }
   }
 
@@ -373,6 +392,7 @@ class SidebarCard extends LitElement {
       case 'navigate':
         if (tapAction.navigation_path) {
           navigate(window, tapAction.navigation_path);
+          this._updateActiveMenu();
         }
         break;
       case 'url':
@@ -383,6 +403,12 @@ class SidebarCard extends LitElement {
       case 'toggle':
         if (tapAction.entity) {
           toggleEntity(this.hass!, tapAction.entity!);
+          const [entity, state] = this.getState(tapAction);
+          const activeEl = this.shadowRoot!.querySelector('ul.sidebarMenu li[data-entity="' + entity.entity_id + '"]');
+          if (activeEl) {
+            activeEl.classList.remove(state == 'on' ? 'off' : 'on');
+            activeEl.classList.add(state);
+          }
           forwardHaptic('success');
         }
         break;
@@ -398,7 +424,7 @@ class SidebarCard extends LitElement {
     }
   }
 
-  setConfig(config) {
+  setConfig(config: SidebarConfig) {
     this.config = config;
 
     if (this.config.template) {
@@ -478,8 +504,22 @@ class SidebarCard extends LitElement {
       .sidebarMenu li.active {
         color: var(--sidebar-selected-text-color);
       }
+      .sidebarMenu li.on {
+        color: yellow;
+      }
       .sidebarMenu li.active ha-icon {
-        color: var(--sidebar-selected-icon-color, rgb(247, 217, 89));
+        color: var(--sidebar-selected-icon-color));
+      }
+      .sidebarMenu li.on::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: yellow;
+        opacity: 0.12;
+        border-radius: 12px;
       }
       .sidebarMenu li.active::before {
         content: '';
@@ -805,7 +845,7 @@ function createCSS(sidebarConfig: SidebarConfig, width: number) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function log2console(method: string, message: string, object?: any) {
-  const lovelace = await getConfig();
+  const lovelace: any = await getConfig();
   if (lovelace.config.sidebar) {
     const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
     if (sidebarConfig.debug === true) {
@@ -816,7 +856,7 @@ async function log2console(method: string, message: string, object?: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function error2console(method: string, message: string, object?: any) {
-  const lovelace = await getConfig();
+  const lovelace: any = await getConfig();
   if (lovelace.config.sidebar) {
     const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
     if (sidebarConfig.debug === true) {
@@ -839,6 +879,35 @@ function getRoot() {
 
   return root as Element;
 }
+
+function get_lovelace() {
+  let root: any = document.querySelector("hc-main");
+  let ll: any;
+  if(root) {
+    ll = root._lovelaceConfig;
+    ll.current_view = root._lovelacePath;
+    return ll as HTMLElement;
+  }
+
+  root = document.querySelector("home-assistant");
+  root = root && root.shadowRoot;
+  root = root && root.querySelector("home-assistant-main");
+  root = root && root.shadowRoot;
+  root = root && root.querySelector("ha-drawer");
+  root = root && root.querySelector("partial-panel-resolver");
+  root = root && root.shadowRoot || root;
+  root = root && root.querySelector("ha-panel-lovelace")
+  root = root && root.shadowRoot;
+  root = root && root.querySelector("hui-root")
+  if (root) {
+    ll =  root.lovelace
+    ll.current_view = root.___curView;
+    return ll as HTMLElement;
+  }
+
+  return null;
+}
+
 
 // return var(--header-height) from #view element
 // We need to take from the div#view element in case of "kiosk-mode" module installation that defined new CSS var(--header-height) as local new variable, not available in div#customSidebar
@@ -1009,13 +1078,13 @@ function sleep(ms: number) {
 async function getConfig() {
   let ll: HTMLElement | null = null;
   while (!ll) {
-    ll = lovelace();
-    if (!lovelace) {
+    ll = get_lovelace();
+    if (!ll) {
       await sleep(500);
     }
   }
 
-  return lovelace;
+  return ll;
 }
 
 // ##########################################################################################
@@ -1023,10 +1092,14 @@ async function getConfig() {
 // ##########################################################################################
 
 async function buildSidebar() {
-  const lovelace = await getConfig();
+  const lovelace: any = await getConfig();
+
   if (lovelace.config.sidebar) {
     const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
-    if (!sidebarConfig.width || (sidebarConfig.width && typeof sidebarConfig.width == 'number' && sidebarConfig.width > 0 && sidebarConfig.width < 100) || (sidebarConfig.width && typeof sidebarConfig.width == 'object')) {
+    if (!sidebarConfig.width || 
+      (sidebarConfig.width && typeof sidebarConfig.width == 'number' && 
+        sidebarConfig.width > 0 && sidebarConfig.width < 100) 
+      || (sidebarConfig.width && typeof sidebarConfig.width == 'object')) {
       const root = getRoot();
       const hassSidebar = getSidebar();
       const appDrawerLayout = getAppDrawerLayout();
@@ -1108,5 +1181,6 @@ console.info(
   'color: white; background: dimgrey; font-weight: 700;'
 );
 
-buildSidebar();
+
+await buildSidebar();
 watchLocationChange();
