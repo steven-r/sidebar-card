@@ -1,1 +1,5 @@
 node_modules
+.hass_dev/.storage
+.hass_dev/home-assistant.log*
+.vscode/
+.vscode/settings.json

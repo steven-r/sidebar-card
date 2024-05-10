@@ -1,4 +1,4 @@
 {
     "eslint.format.enable": true,
-    "eslint.useESLintClass": true
+    "eslint.useESLintClass": true,
 }

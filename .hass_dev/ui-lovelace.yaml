@@ -1,0 +1,42 @@
+title: Home Assistant Demo
+
+sidebar:
+  digitalClock: true
+  date: true
+  width: 25
+  debug: true
+  sidebarMenu:
+    - action: navigate
+      navigation_path: "/lovelace/home"
+      name: "Home"
+      active: true
+    - action: navigate
+      navigation_path: "/lovelace/test"
+      name: "Lampen"
+    - action: toggle
+      entity: light.bed_light
+      name: Bed Light
+      state: light.bed_light
+      icon: mdi:led-strip-variant  
+
+views:
+  - type: sections
+    title: Demo
+    path: home
+    icon: mdi:home-assistant
+    sections:
+      - title: Welcome 👋
+        cards:
+          - type: tile
+            entity: light.bed_light
+            name: Bed light
+  - type: sections
+    title: LIving Room
+    path: test
+    icon: mdi:sofa
+    sections:
+      - title: Living room
+        cards:
+          - type: tile
+            entity: light.bed_light
+            name: Bed light

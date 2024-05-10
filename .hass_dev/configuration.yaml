@@ -1,0 +1,15 @@
+frontend:
+  themes: !include_dir_merge_named themes
+  extra_module_url:
+    - http://localhost:5000/sidebar-card.js?ts=1
+
+demo:
+
+lovelace:
+  mode: yaml
+
+homeassistant:
+  customize:
+    switch.skylight:
+      device_class: switch
+
