@@ -1,27 +1,20 @@
 title: Home Assistant Demo
 
 sidebar:
-  digitalClock: true
+  clock: digital
   date: true
   width: 25
-  debug: true
-  bottomCard:
-    type: entity
-    cardOptions:
+  cards:
+    - type: entity
       entity: light.bed_light
-  sidebarMenu:
-    - action: navigate
-      navigation_path: "/lovelace/home"
-      name: "Home"
-      active: true
-    - action: navigate
-      navigation_path: "/lovelace/test"
-      name: "Lampen"
-    - action: toggle
-      entity: light.bed_light
-      name: Bed Light
-      state: light.bed_light
-      icon: mdi:led-strip-variant  
+      name: "Bad"
+      tap_action: 
+        action: toggle
+    - show_current: true
+      show_forecast: false
+      type: weather-forecast
+      entity: weather.demo_weather_south
+      forecast_type: daily
 
 views:
   - type: sections
@@ -34,6 +27,8 @@ views:
           - type: tile
             entity: light.bed_light
             name: Bed light
+            tap_action: 
+              action: toggle
   - type: sections
     title: LIving Room
     path: test

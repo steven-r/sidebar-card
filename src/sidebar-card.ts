@@ -1,123 +1,155 @@
-// ------------------------------------------------------------------------------------------
-//  SIDEBAR-CARD
-// ------------------------------------------------------------------------------------------
-//  https://github.com/steven-r/sidebar-card
-// ------------------------------------------------------------------------------------------
-
-// ##########################################################################################
-// ###   Global constants
-// ##########################################################################################
-
-const SIDEBAR_CARD_TITLE = 'SIDEBAR-CARD';
-const SIDEBAR_CARD_VERSION = '0.1.9.7.0';
-
 // ##########################################################################################
 // ###   Import dependencies
 // ##########################################################################################
 
-import { css, html, LitElement } from 'lit-element';
-import { moreInfo } from 'card-tools/src/more-info';
+import { css, html, LitElement } from 'lit';
+import { state, property } from 'lit/decorators.js';
+
 import { hass, provideHass } from 'card-tools/src/hass';
 import { subscribeRenderTemplate } from 'card-tools/src/templates';
 import { DateTime } from 'luxon';
-import { forwardHaptic, HomeAssistant, navigate, toggleEntity } from 'custom-card-helpers';
+import { HomeAssistant } from 'custom-card-helpers';
+import { getAppDrawer, getAppDrawerLayout, getHeaderHeightPx, getRoot, getSidebar } from './helpers';
+import { log2console } from './helpers';
+import { getParameterByName } from './helpers';
+import { getConfig } from './helpers';
+import { SIDEBAR_CARD_TITLE } from './config';
+import { SIDEBAR_CARD_VERSION } from './config';
 
 // ##########################################################################################
 // ###   The actual Sidebar Card element
 // ##########################################################################################
 
-interface BottomCard {
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cardStyle: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cardOptions: any;
+interface LovelaceElement extends HTMLElement {
+  hass: HomeAssistant;
+  setConfig(config: object): void;
 }
 
 interface ItemNumberList {
   [key: string]: number;
 }
 
-interface SidebarConfig {
-  showTopMenuOnMobile: boolean;
-  hideTopMenu: boolean;
-  breakpoints: ItemNumberList;
-  desktop: number;
-  width: ItemNumberList;
-  hideOnPath: string[];
+const DEFAULT_CONFIG = {
+  width: 25,
+  clock: true,
+  dateFormat: 'DD',
+  digitalClockWithSeconds: false,
+  twelveHourVersion: false,
+  period: false,
+  date: false,
+};
+
+interface WidthConfig {
+  mobile?: number;
+  tablet?: number;
+  desktop?: number;
+}
+interface BreakpointConfig {
+  mobile?: number;
+  tablet?: number;
 }
 
+interface SidebarConfig {
+  clock?: "digital" | "analog";
+  digitalClockWithSeconds?: boolean;
+  period?: boolean;
+  date?: boolean;
+  dateFormat?: string;
+  style: string;
+  twelveHourVersion?: boolean;
+  showTopMenuOnMobile?: boolean;
+  hideTopMenu?: boolean;
+  hideHassSidebar?:boolean;
+  breakpoints?: BreakpointConfig;
+  width?: number | WidthConfig;
+  hideOnPath?: string[];
+  cards?: ItemNumberList[];
+  template?: string;
+  title?: string;
+}
 
 class SidebarCard extends LitElement {
   /* **************************************** *
    *        Element's local properties        *
    * **************************************** */
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  config: any;
-  hass?: HomeAssistant;
-  templateLines: string[] = [];
-  clock = false;
-  updateMenu = true;
-  digitalClock = false;
-  twelveHourVersion = false;
-  digitalClockWithSeconds = false;
-  period = false;
-  date = false;
-  dateFormat = 'DD MMMM';
-  bottomCard?: BottomCard = undefined;
+  @state() config!: SidebarConfig;
+  @state() current_date!: string;
+  @state() current_time!: string;
+  @property() templateLines: string[] = [];
+  @property() cards!: LovelaceElement[];
+
+  _hass!: HomeAssistant;
+
   CUSTOM_TYPE_PREFIX = 'custom:';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _helpers: any = null;
 
-  /* **************************************** *
-   *        Element's public properties       *
-   * **************************************** */
-
-  static get properties() {
-    return {
-      hass: {},
-      config: {},
-      active: {},
-    };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async loadCardHelpers(): Promise<any> {
+    if (this._helpers) return this._helpers;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this._helpers = await (window as any).loadCardHelpers();
+    return this._helpers;
   }
 
-  private async loadCardHelpers(): Promise<void> {
-    if (this._helpers) return;
-		this._helpers = await (window as any).loadCardHelpers();
-	}
-  /* **************************************** *
-   *           Element constructor            *
-   * **************************************** */
+  set hass(hass: HomeAssistant) {
+    this._hass = hass;
+    this.cards?.forEach((e) => (e.hass = hass));
+  }
 
-  constructor() {
-    super();
+  /**
+   * get width based on 'type', applying defaults
+   * @param type either `mobile`, 'tablet', or 'desktop`
+   * @returns 
+   */
+  getWidth(type: string): number {
+    const w = {
+      mobile: this.config.width ?
+        typeof (this.config.width) == typeof (Number) ? this.config.width as number : (this.config.width as WidthConfig).mobile ?? 25
+        : 25,
+      tablet: this.config.width ?
+        typeof (this.config.width) == typeof (Number) ? this.config.width as number : (this.config.width as WidthConfig).tablet ?? 25
+        : 25,
+      desktop: this.config.width ?
+        typeof (this.config.width) == typeof (Number) ? this.config.width as number : (this.config.width as WidthConfig).desktop ?? 25
+        : 25,
+    }
+    switch (type) {
+      case 'mobile': return w.mobile;
+      case 'tablet': return w.tablet;
+      case 'desktop': return w.desktop;
+      default:
+        throw new Error(`Unknown type ${type}`);
+    }
   }
-  
-  getState(sidebarMenuItem) {
-    const entity = sidebarMenuItem.state && this.hass?.states[sidebarMenuItem.state];
-    return [ entity, entity && (entity.state ?? '') ];
+
+  /**
+   * get break type
+   * @param width - document view width
+   * @returns 
+   */
+  getBreakpoint(width: number): string {
+    const mobileBreak = this.config.breakpoints ?
+      this.config.breakpoints.mobile ?? 768
+      : 768;
+    const tabletBreak = this.config.breakpoints ?
+      this.config.breakpoints.tablet ?? 1924
+      : 1024;
+    if (width <= mobileBreak) return "mobile";
+    if (width <= tabletBreak) return "tablet";
+    return "desktop";
   }
+
   /* **************************************** *
    *   Element's HTML renderer (lit-element)  *
    * **************************************** */
 
   render() {
-    const sidebarMenu = this.config.sidebarMenu;
-    const title = 'title' in this.config ? this.config.title : false;
-    const addStyle = 'style' in this.config;
-
-    this.clock = this.config.clock ? this.config.clock : false;
-    this.digitalClock = this.config.digitalClock ? this.config.digitalClock : false;
-    this.digitalClockWithSeconds = this.config.digitalClockWithSeconds ? this.config.digitalClockWithSeconds : false;
-    this.twelveHourVersion = this.config.twelveHourVersion ? this.config.twelveHourVersion : false;
-    this.period = this.config.period ? this.config.period : false;
-    this.date = this.config.date ? this.config.date : false;
-    this.dateFormat = this.config.dateFormat ? this.config.dateFormat : 'DD';
-    this.bottomCard = this.config.bottomCard ? this.config.bottomCard : null;
-    this.updateMenu = Object.prototype.hasOwnProperty.call(this.config, 'updateMenu') ? this.config.updateMenu : true;
+    const title = this.config.title ?? false;
 
     return html`
-      ${addStyle
+      ${this.config.style
         ? html`
             <style>
               ${this.config.style}
@@ -126,13 +158,13 @@ class SidebarCard extends LitElement {
         : html``}
 
       <div class="sidebar-inner">
-        ${this.digitalClock
-          ? html`
-              <h1 class="digitalClock${title ? ' with-title' : ''}${this.digitalClockWithSeconds ? ' with-seconds' : ''}"></h1>
+        ${this.config.clock === "digital"
+        ? html`
+              <h1 class="digitalClock${title ? ' with-title' : ''}${this.config.digitalClockWithSeconds === true ? ' with-seconds' : ''}"></h1>
             `
-          : html``}
-        ${this.clock
-          ? html`
+        : html``}
+        ${this.config.clock === "analog"
+        ? html`
               <div class="clock">
                 <div class="wrap">
                   <span class="hour"></span>
@@ -142,55 +174,45 @@ class SidebarCard extends LitElement {
                 </div>
               </div>
             `
-          : html``}
+        : html``}
         ${title
-          ? html`
+        ? html`
               <h1 class="title">${title}</h1>
             `
-          : html``}
-        ${this.date
-          ? html`
-              <h2 class="date"></h2>
+        : html``}
+        ${this.config.date === true
+        ? html`
+              <h2 class="date">${this.current_date}</h2>
             `
-          : html``}
-        ${sidebarMenu && sidebarMenu.length > 0
-          ? html`
-              <ul class="sidebarMenu">
-                ${sidebarMenu.map((sidebarMenuItem) => {
-                  const [entity, state] = this.getState(sidebarMenuItem);
-
-                  return html`
-                    <li @click="${(e) => this._menuAction(e)}" class="${state}" data-entity=${entity ? entity.entity_id : ''} data-type="${sidebarMenuItem.action}" data-path="${sidebarMenuItem.navigation_path ? sidebarMenuItem.navigation_path : ''}" data-menuitem="${JSON.stringify(sidebarMenuItem)}">
-                      <span>${sidebarMenuItem.name}</span>
-                      ${sidebarMenuItem.icon
-                        ? html`
-                            <ha-icon @click="${(e) => this._menuAction(e)}" icon="${sidebarMenuItem.icon}"></ha-icon>
-                          `
-                        : html``}
-                    </li>
-                  `;
-                })}
-              </ul>
-            `
-          : html``}
+        : html``}
+        ${this.cards && this.cards.length > 0
+        ? html`<div class="sidebarcards">
+            ${this.cards.map(c => html`<div>${c}</div>`)}
+          </div>`
+        : html``}
         ${this.config.template
-          ? html`
+        ? html`
               <ul class="template">
                 ${this.templateLines.map((line) => {
                   return html`
                     <li>${line}</li>
                   `;
-                })}
+                  })}
               </ul>
             `
-          : html``}
-        ${this.bottomCard
-          ? html`
-              <div class="bottom"></div>
-            `
-          : html``}
+        : html``}
       </div>
     `;
+  }
+
+  async updated(changedProperties) {
+    super.updated(changedProperties);
+    if (changedProperties.has("open")) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((this as any)._cardMod)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any)._cardMod.forEach((cm) => cm.refresh());
+    }
   }
 
   _runClock() {
@@ -204,19 +226,22 @@ class SidebarCard extends LitElement {
     const minutes = date.getMinutes();
     const seconds = date.getSeconds();
 
+    if (hours == 0 && minutes == 0 && seconds < 2) {
+      this._runDate();
+    }
     const hour = Math.floor((hours * 60 + minutes) / 2);
     const minute = minutes * 6;
     const second = seconds * 6;
 
-    if (this.clock) {
+    if (this.config.clock === "analog") {
       this.shadowRoot!.querySelector<HTMLElement>('.hour')!.style.transform = `rotate(${hour}deg)`;
       this.shadowRoot!.querySelector<HTMLElement>('.minute')!.style.transform = `rotate(${minute}deg)`;
       this.shadowRoot!.querySelector<HTMLElement>('.second')!.style.transform = `rotate(${second}deg)`;
     }
-    if (this.digitalClock && !this.twelveHourVersion) {
+    if (this.config.clock == "digital" && this.config.twelveHourVersion !== true) {
       const minutesString = minutes.toString();
       digitalTime = fullHours.length < 2 ? '0' + fullHours + ':' : fullHours + ':';
-      if (this.digitalClockWithSeconds) {
+      if (this.config.digitalClockWithSeconds === true) {
         digitalTime += minutesString.length < 2 ? '0' + minutesString + ':' : minutesString + ':';
         const secondsString = seconds.toString();
         digitalTime += secondsString.length < 2 ? '0' + secondsString : secondsString;
@@ -224,14 +249,14 @@ class SidebarCard extends LitElement {
         digitalTime += minutesString.length < 2 ? '0' + minutesString : minutesString;
       }
       this.shadowRoot!.querySelector('.digitalClock')!.textContent = digitalTime;
-    } else if (this.digitalClock && this.twelveHourVersion && !this.period) {
+    } else if (this.config.clock == "digital" && this.config.twelveHourVersion === true && !this.config.period === true) {
       hoursampm = date.getHours();
       hoursampm = hoursampm % 12;
       hoursampm = hoursampm ? hoursampm : 12;
       fullHours = hoursampm.toString();
       const minutesString = minutes.toString();
       digitalTime = fullHours.length < 2 ? '0' + fullHours + ':' : fullHours + ':';
-      if (this.digitalClockWithSeconds) {
+      if (this.config.digitalClockWithSeconds === true) {
         digitalTime += minutesString.length < 2 ? '0' + minutesString + ':' : minutesString + ':';
         const secondsString = seconds.toString();
         digitalTime += secondsString.length < 2 ? '0' + secondsString : secondsString;
@@ -240,7 +265,8 @@ class SidebarCard extends LitElement {
       }
       //digitalTime;
       this.shadowRoot!.querySelector('.digitalClock')!.textContent = digitalTime;
-    } else if (this.digitalClock && this.twelveHourVersion && this.period) {
+    }
+    else if (this.config.clock == "digital" && this.config.twelveHourVersion === true && this.config.period === true) {
       const ampm = realHours >= 12 ? 'pm' : 'am';
       hoursampm = date.getHours();
       hoursampm = hoursampm % 12;
@@ -248,7 +274,7 @@ class SidebarCard extends LitElement {
       fullHours = hoursampm.toString();
       const minutesString = minutes.toString();
       digitalTime = fullHours.length < 2 ? '0' + fullHours + ':' : fullHours + ':';
-      if (this.digitalClockWithSeconds) {
+      if (this.config.digitalClockWithSeconds === true) {
         digitalTime += minutesString.length < 2 ? '0' + minutesString + ':' : minutesString + ':';
         const secondsString = seconds.toString();
         digitalTime += secondsString.length < 2 ? '0' + secondsString : secondsString;
@@ -262,174 +288,61 @@ class SidebarCard extends LitElement {
 
   _runDate() {
     const now = DateTime.local();
-    now.setLocale(this.hass!.language);
-    this.shadowRoot!.querySelector('.date')!.textContent = now.toFormat(this.dateFormat);
+    now.setLocale(this._hass.language);
+    this.current_date = now.toFormat(this.config.dateFormat);
   }
 
   updateSidebarSize() {
-    const sidebarInner = this.shadowRoot!.querySelector<HTMLElement>('.sidebar-inner');
+    const sidebarInner = this.shadowRoot?.querySelector<HTMLElement>('.sidebar-inner');
     const headerHeightPx = getHeaderHeightPx();
-    
+
     if (sidebarInner) {
       sidebarInner.style.width = this.offsetWidth + 'px';
-      if(this.config.hideTopMenu) {
+      if (this.config.hideTopMenu) {
         sidebarInner.style.height = `${window.innerHeight}px`;
         sidebarInner.style.top = '0px';
       } else {
-        sidebarInner.style.height = `calc(${window.innerHeight}px - `+headerHeightPx+`)`;
+        sidebarInner.style.height = `calc(${window.innerHeight}px - ` + headerHeightPx + `)`;
         sidebarInner.style.top = headerHeightPx;
       }
     }
   }
 
-  firstUpdated() {
+  async _finishSetup() {
     provideHass(this);
-    const root = getRoot();
-    root.shadowRoot!.querySelectorAll('paper-tab').forEach((paperTab) => {
-      log2console('firstUpdated', 'Menu item found');
-      paperTab.addEventListener('click', () => {
-        this._updateActiveMenu();
-      });
-    });
-    if (this.clock || this.digitalClock) {
-      const inc = 1000;
+    const inc = 1000;
+    this._runDate(); // init date
+    setInterval(() => {
       this._runClock();
-      setInterval(() => {
-        this._runClock();
-      }, inc);
-    }
-    if (this.date) {
-      const inc = 1000 * 60 * 60;
-      this._runDate();
-      setInterval(() => {
-        this._runDate();
-      }, inc);
-    }
+    }, inc);
 
     setTimeout(() => {
       this.updateSidebarSize();
-      this._updateActiveMenu();
     }, 1);
-    window.addEventListener(
-      'resize',
-      () => {
-        setTimeout(() => {
-          this.updateSidebarSize();
-        }, 1);
-      },
-      true
-    );
+    window.addEventListener('resize', () => this.updateSidebarSize(), true);
 
-    if (this.bottomCard) {
-      setTimeout(async () => {
-        let card = {
-          type: this.bottomCard!.type,
-        };
-        card = Object.assign({}, card, this.bottomCard!.cardOptions);
-        log2console('firstUpdated', 'Bottom card: ', card);
-        if (!card || typeof card !== 'object' || !card.type) {
-          error2console('firstUpdated', 'Bottom card config error!');
-        } else {
-          let tag = card.type;
-          if (tag.startsWith(this.CUSTOM_TYPE_PREFIX)) tag = tag.substr(this.CUSTOM_TYPE_PREFIX.length);
-          else tag = `hui-${tag}-card`;
-
-          await this.loadCardHelpers();
-          const cardElement = await this._helpers.createCardElement(card);
-          setTimeout(function () {
-            if (cardElement.setConfig) {
-              cardElement.setConfig(card);
-            }
-          }, 1000);
-          cardElement.hass = hass();
-
-          const bottomSection = this.shadowRoot!.querySelector('.bottom')!;
-          bottomSection.appendChild(cardElement);
-          provideHass(cardElement);
-
-          if (this.bottomCard!.cardStyle && this.bottomCard!.cardStyle != '') {
-            const style = this.bottomCard!.cardStyle;
-            let itterations = 0;
-            const interval = setInterval(function() {
-              if (cardElement && cardElement.shadowRoot) {
-                window.clearInterval(interval);
-                const styleElement = document.createElement('style')!;
-                styleElement.innerHTML = style;
-                cardElement.shadowRoot.appendChild(styleElement);
-              } else if (++itterations === 10) {
-                window.clearInterval(interval);
-              }
-            }, 100);
-          }
-        }
-      }, 2);
+    if (this.config.cards) {
+      this.cards = await Promise.all(this.config.cards.map(async (card): Promise<LovelaceElement> => {
+        await this.loadCardHelpers();
+        const cardElement = await this._helpers.createCardElement(card);
+        cardElement.hass = this._hass;
+        cardElement.setConfig(card);
+        log2console('_finishSetup', 'add card: ', cardElement);
+        return cardElement;
+      }));
+      this.requestUpdate("cards");
     }
   }
 
-  _updateActiveMenu() {
-    if(this.updateMenu) {
-      this.shadowRoot!.querySelectorAll('ul.sidebarMenu li[data-type="navigate"]').forEach((menuItem) => {
-        menuItem.classList.remove('active');
-      });
-      const activeEl = this.shadowRoot!.querySelector('ul.sidebarMenu li[data-path="' + document.location.pathname + '"]');
-      if (activeEl) {
-        activeEl.classList.add('active');
-      }
-    }
-  }
-
-  _menuAction(e) {
-    if ((e.target.dataset && e.target.dataset.menuitem) || (e.target.parentNode.dataset && e.target.parentNode.dataset.menuitem)) {
-      const menuItem = JSON.parse(e.target.dataset.menuitem || e.target.parentNode.dataset.menuitem);
-      this._customAction(menuItem);
-    }
-  }
-
-  _customAction(tapAction) {
-    switch (tapAction.action) {
-      case 'more-info':
-        if (tapAction.entity || tapAction.camera_image) {
-          moreInfo(tapAction.entity ? tapAction.entity : tapAction.camera_image!);
-        }
-        break;
-      case 'navigate':
-        if (tapAction.navigation_path) {
-          navigate(window, tapAction.navigation_path);
-          this._updateActiveMenu();
-        }
-        break;
-      case 'url':
-        if (tapAction.url_path) {
-          window.open(tapAction.url_path);
-        }
-        break;
-      case 'toggle':
-        if (tapAction.entity) {
-          toggleEntity(this.hass!, tapAction.entity!);
-          const [entity, state] = this.getState(tapAction);
-          const activeEl = this.shadowRoot!.querySelector('ul.sidebarMenu li[data-entity="' + entity.entity_id + '"]');
-          if (activeEl) {
-            activeEl.classList.remove('off', 'on');
-            activeEl.classList.add(state == 'on' ? 'off': 'on');
-          }
-          forwardHaptic('success');
-        }
-        break;
-      case 'call-service': {
-        if (!tapAction.service) {
-          forwardHaptic('failure');
-          return;
-        }
-        const [domain, service] = tapAction.service.split('.', 2);
-        this.hass!.callService(domain, service, tapAction.service_data);
-        forwardHaptic('success');
-      }
-    }
-  }
 
   setConfig(config: SidebarConfig) {
-    this.config = config;
+    this.config = Object.assign({}, DEFAULT_CONFIG, config);
 
+    if (this.config.clock) {
+      if (!(this.config.clock == "analog" || this.config.clock == "digital")) {
+        throw Error(`Unknown clock type ${this.config.clock}`);
+      }
+    }
     if (this.config.template) {
       subscribeRenderTemplate(
         null,
@@ -442,10 +355,11 @@ class SidebarCard extends LitElement {
         {
           template: this.config.template,
           variables: { config: this.config },
-          entity_ids: this.config.entity_ids,
         }
       );
     }
+
+    this._finishSetup();
   }
 
   getCardSize() {
@@ -481,59 +395,10 @@ class SidebarCard extends LitElement {
         width: 0;
         overflow: hidden auto;
       }
-      .sidebarMenu {
-        list-style: none;
-        margin: 20px 0;
+      .sidebarcards {
+        margin-top: 20px;
         padding: 20px 0;
         border-top: 1px solid rgba(255, 255, 255, 0.2);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      .sidebarMenu li {
-        color: var(--sidebar-text-color, #000);
-        position: relative;
-        padding: 10px 20px;
-        border-radius: 12px;
-        font-size: 18px;
-        line-height: 24px;
-        font-weight: 300;
-        white-space: normal;
-        display: block;
-        cursor: pointer;
-      }
-      .sidebarMenu li ha-icon {
-        float: right;
-        color: var(--sidebar-icon-color, #000);
-      }
-      .sidebarMenu li.active {
-        color: var(--sidebar-selected-text-color);
-      }
-      .sidebarMenu li.on {
-        color: yellow;
-      }
-      .sidebarMenu li.active ha-icon {
-        color: var(--sidebar-selected-icon-color));
-      }
-      .sidebarMenu li.on::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: yellow;
-        opacity: 0.12;
-        border-radius: 12px;
-      }
-      .sidebarMenu li.active::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: var(--sidebar-selected-icon-color, #000);
-        opacity: 0.12;
-        border-radius: 12px;
       }
       h1 {
         margin-top: 0;
@@ -545,13 +410,15 @@ class SidebarCard extends LitElement {
         cursor: default;
       }
       h1.digitalClock {
-        font-size: 60px;
-        line-height: 60px;
+        font-size: 78px;
+        font-weight: 400;
+        line-height: 78px;
         cursor: default;
       }
       h1.digitalClock.with-seconds {
-        font-size: 48px;
-        line-height: 48px;
+        font-size: 60px;
+        font-weight: 400;
+        line-height: 60px;
         cursor: default;
       }
       h1.digitalClock.with-title {
@@ -669,32 +536,20 @@ class SidebarCard extends LitElement {
       }
     `;
   }
-}
 
-customElements.define('sidebar-card', SidebarCard);
+  // ##########################################################################################
+  // ###   The default CSS of the Sidebar Card element
+  // ##########################################################################################
 
-// ##########################################################################################
-// ###   The default CSS of the Sidebar Card element
-// ##########################################################################################
+  createCSS(width: number): string {
+    const sidebarResponsive = typeof this.config.width === 'object';
+    const headerHeightPx = getHeaderHeightPx();
 
-function createCSS(sidebarConfig: SidebarConfig, width: number) {
-  let sidebarWidth = 25;
-  let contentWidth = 75;
-  let sidebarResponsive = false;
-  const headerHeightPx = getHeaderHeightPx();
-
-  if (sidebarConfig.width) {
-    if (typeof sidebarConfig.width == 'number') {
-      sidebarWidth = sidebarConfig.width;
-      contentWidth = 100 - sidebarWidth;
-    } else if (typeof sidebarConfig.width == 'object') {
-      sidebarWidth = sidebarConfig.desktop;
-      contentWidth = 100 - sidebarWidth;
-      sidebarResponsive = true;
-    }
-  }
-  // create css
-  let css = `
+    const breakType = this.getBreakpoint(width);
+    const sidebarWidth = this.getWidth(breakType);
+    const contentWidth = 100 - sidebarWidth;
+    // create css
+    let css = `
     #customSidebarWrapper { 
       display:flex;
       flex-direction:row;
@@ -708,276 +563,40 @@ function createCSS(sidebarConfig: SidebarConfig, width: number) {
       width:100%!important;
     }
   `;
-  if (sidebarResponsive) {
-    if (width <= sidebarConfig.breakpoints.mobile) {
-      if (sidebarConfig.width.mobile == 0) {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.mobile +
-          `%;
-            overflow:hidden;
-            display:none;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.mobile) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      } else {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.mobile +
-          `%;
-            overflow:hidden;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.mobile) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      }
-    } else if (width <= sidebarConfig.breakpoints.tablet) {
-      if (sidebarConfig.width.tablet == 0) {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.tablet +
-          `%;
-            overflow:hidden;
-            display:none;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.tablet) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      } else {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.tablet +
-          `%;
-            overflow:hidden;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.tablet) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      }
-    } else {
-      if (sidebarConfig.width.tablet == 0) {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.desktop +
-          `%;
-            overflow:hidden;
-            display:none;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.desktop) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      } else {
-        css +=
-          `
-          #customSidebar {
-            width:` +
-          sidebarConfig.width.desktop +
-          `%;
-            overflow:hidden;
-            ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
-          } 
-          #view {
-            width:` +
-          (100 - sidebarConfig.width.desktop) +
-          `%;
-          ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
-          }
-        `;
-      }
-    }
-  } else {
-    css +=
-      `
+    if (sidebarResponsive) {
+      css += `
       #customSidebar {
-        width:` +
-      sidebarWidth +
-      `%;
+        width:${sidebarWidth}%;
         overflow:hidden;
-        ${sidebarConfig.hideTopMenu ? '' : 'margin-top: calc('+headerHeightPx+' + env(safe-area-inset-top));'}
+        ${sidebarWidth == 0 ? "display:none;" : ""}
+        ${this.config.hideTopMenu ? '' : 'margin-top: calc(' + headerHeightPx + ' + env(safe-area-inset-top));'}
       } 
       #view {
-        width:` +
-      contentWidth +
-      `%;
-      ${sidebarConfig.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
+        width: ${contentWidth}%;
+        ${this.config.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
       }
     `;
-  }
-  return css;
-}
-
-// ##########################################################################################
-// ###   Helper methods
-// ##########################################################################################
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function log2console(method: string, message: string, object?: any) {
-  const lovelace: any = await getConfig();
-  if (lovelace.config.sidebar) {
-    const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
-    if (sidebarConfig.debug === true) {
-      console.info(`%c${SIDEBAR_CARD_TITLE}: %c ${method.padEnd(24)} -> %c ${message}`, 'color: chartreuse; background: black; font-weight: 700;', 'color: yellow; background: black; font-weight: 700;', '', object);
+    } else {
+      css += `
+      #customSidebar {
+        width: ${sidebarWidth}%;
+        overflow:hidden;
+        ${this.config.hideTopMenu ? '' : 'margin-top: calc(' + headerHeightPx + ' + env(safe-area-inset-top));'}
+      } 
+      #view {
+        width: ${contentWidth}%;
+        ${this.config.hideTopMenu ? 'padding-top:0!important;margin-top:0!important;' : ''}
+      }
+    `;
     }
+    return css;
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function error2console(method: string, message: string, object?: any) {
-  const lovelace: any = await getConfig();
-  if (lovelace.config.sidebar) {
-    const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
-    if (sidebarConfig.debug === true) {
-      console.error(`%c${SIDEBAR_CARD_TITLE}: %c ${method.padEnd(24)} -> %c ${message}`, 'color: red; background: black; font-weight: 700;', 'color: white; background: black; font-weight: 700;', 'color:red', object);
-    }
-  }
-}
-
-// Returns the root element
-function getRoot() {
-  let root: Element | ShadowRoot | null = document.querySelector('home-assistant');
-  root = root && root.shadowRoot;
-  root = root && root.querySelector('home-assistant-main');
-  root = root && root.shadowRoot;
-  root = root && root.querySelector('ha-drawer partial-panel-resolver');
-  root = (root && root.shadowRoot) || root;
-  root = root && root.querySelector('ha-panel-lovelace');
-  root = root && root.shadowRoot;
-  root = root && root.querySelector('hui-root');
-
-  return root as Element;
-}
-
-function get_lovelace() {
-  let root: any = document.querySelector("hc-main");
-  let ll: any;
-  if(root) {
-    ll = root._lovelaceConfig;
-    ll.current_view = root._lovelacePath;
-    return ll as HTMLElement;
-  }
-
-  root = document.querySelector("home-assistant");
-  root = root && root.shadowRoot;
-  root = root && root.querySelector("home-assistant-main");
-  root = root && root.shadowRoot;
-  root = root && root.querySelector("ha-drawer");
-  root = root && root.querySelector("partial-panel-resolver");
-  root = root && root.shadowRoot || root;
-  root = root && root.querySelector("ha-panel-lovelace")
-  root = root && root.shadowRoot;
-  root = root && root.querySelector("hui-root")
-  if (root) {
-    ll =  root.lovelace
-    ll.current_view = root.___curView;
-    return ll as HTMLElement;
-  }
-
-  return null;
-}
-
-
-// return var(--header-height) from #view element
-// We need to take from the div#view element in case of "kiosk-mode" module installation that defined new CSS var(--header-height) as local new variable, not available in div#customSidebar
-function getHeaderHeightPx() {
-	let headerHeightPx = '0px';
-	const root = getRoot();
-    const view = root.shadowRoot!.getElementById('view');
-	//debugger;
-	if(view && window.getComputedStyle(view)!==undefined) {
-		headerHeightPx = window.getComputedStyle(view).paddingTop;
-	}
-    return headerHeightPx;
-}
-
-// Returns the Home Assistant Sidebar element
-function getSidebar() {
-  let sidebar: HTMLElement | ShadowRoot | null = document.querySelector<HTMLElement>('home-assistant');
-  sidebar = sidebar && sidebar.shadowRoot;
-  sidebar = sidebar && sidebar.querySelector<HTMLElement>('home-assistant-main');
-  sidebar = sidebar && sidebar.shadowRoot;
-  sidebar = sidebar && sidebar.querySelector<HTMLElement>('ha-drawer ha-sidebar');
-
-  return sidebar;
-}
-
-// Returns the Home Assistant app-drawer layout element
-function getAppDrawerLayout() {
-  let appDrawerLayout: HTMLElement | ShadowRoot | null = document.querySelector<HTMLElement>('home-assistant');
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.shadowRoot;
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.querySelector<HTMLElement>('home-assistant-main');
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.shadowRoot;
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.querySelector<HTMLElement>('ha-drawer'); // ha-drawer
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.shadowRoot;
-  appDrawerLayout = appDrawerLayout && appDrawerLayout.querySelector<HTMLElement>('.mdc-drawer-app-content');
-
-  return appDrawerLayout;
-}
-
-// Returns the Home Assistant app-drawer element
-function getAppDrawer() {
-  let appDrawer: HTMLElement | ShadowRoot | null = document.querySelector<HTMLElement>('home-assistant');
-  appDrawer = appDrawer && appDrawer.shadowRoot;
-  appDrawer = appDrawer && appDrawer.querySelector<HTMLElement>('home-assistant-main');
-  appDrawer = appDrawer && appDrawer.shadowRoot;
-  appDrawer = appDrawer && appDrawer.querySelector<HTMLElement>('ha-drawer'); // ha-drawer
-  appDrawer = appDrawer && appDrawer.shadowRoot;
-  appDrawer = appDrawer && appDrawer.querySelector<HTMLElement>('.mdc-drawer');
-
-  return appDrawer;
-}
-
-// Returns a query parameter by its name
-function getParameterByName(name: string, url = window.location.href) {
-  const parameterName = name.replace(/[[\]]/g, '\\$&');
-  const regex = new RegExp('[?&]' + parameterName + '(=([^&#]*)|&|#|$)');
-  const results = regex.exec(url);
-
-  if (!results) return null;
-  if (!results[2]) return '';
-
-  return decodeURIComponent(results[2].replace(/\+/g, ' '));
 }
 
 // hides (if requested) the HA header, HA footer and/or HA sidebar and hides this sidebar if configured so
-function updateStyling(appLayout: HTMLElement, sidebarConfig: SidebarConfig) {
+function updateStyling(appLayout: HTMLElement, card: SidebarCard) {
   const width = document.body.clientWidth;
-  appLayout.querySelector('#customSidebarStyle')!.textContent = createCSS(sidebarConfig, width);
+  appLayout.querySelector('#customSidebarStyle')!.textContent = card.createCSS(width);
 
   const root = getRoot();
   const hassHeader = root.shadowRoot!.querySelector<HTMLElement>('.header');
@@ -988,13 +607,14 @@ function updateStyling(appLayout: HTMLElement, sidebarConfig: SidebarConfig) {
   const view = root.shadowRoot!.getElementById('view');
   const headerHeightPx = getHeaderHeightPx();
 
-  if (sidebarConfig.hideTopMenu && sidebarConfig.hideTopMenu === true && sidebarConfig.showTopMenuOnMobile && sidebarConfig.showTopMenuOnMobile === true && width <= sidebarConfig.breakpoints.mobile && offParam == null) {
+  const sidebarConfig = card.config;
+  if (sidebarConfig.hideTopMenu === true && sidebarConfig.showTopMenuOnMobile === true && card.getBreakpoint(width) === 'mobile' && offParam == null) {
     if (hassHeader) {
       log2console('updateStyling', 'Action: Show Home Assistant header!');
       hassHeader.style.display = 'block';
     }
     if (view) {
-      view.style.minHeight = 'calc(100vh - '+headerHeightPx+')';
+      view.style.minHeight = 'calc(100vh - ' + headerHeightPx + ')';
     }
     if (hassFooter) {
       log2console('updateStyling', 'Action: Show Home Assistant footer!');
@@ -1016,18 +636,19 @@ function updateStyling(appLayout: HTMLElement, sidebarConfig: SidebarConfig) {
 }
 
 // watch and handle the resize and location-changed events
-function subscribeEvents(appLayout: HTMLElement, sidebarConfig: SidebarConfig, contentContainer: Element, sidebar: HTMLElement) {
+function subscribeEvents(appLayout: HTMLElement, card: SidebarCard, contentContainer: Element, sidebar: HTMLElement) {
   window.addEventListener(
     'resize',
-    function() {
-      updateStyling(appLayout, sidebarConfig);
+    function () {
+      updateStyling(appLayout, card);
     },
     true
   );
 
-  if ('hideOnPath' in sidebarConfig) {
+  const sidebarConfig = card.config;
+  if (sidebarConfig.hideOnPath) {
     window.addEventListener('location-changed', () => {
-      if (sidebarConfig.hideOnPath.includes(window.location.pathname)) {
+      if (sidebarConfig.hideOnPath?.includes(window.location.pathname)) {
         contentContainer.classList.add('hideSidebar');
         sidebar.classList.add('hide');
       } else {
@@ -1036,58 +657,24 @@ function subscribeEvents(appLayout: HTMLElement, sidebarConfig: SidebarConfig, c
       }
     });
 
-    if (sidebarConfig.hideOnPath.includes(window.location.pathname)) {
-      log2console('subscribeEvents', 'Disable sidebar for this path');
+    if (sidebarConfig.hideOnPath?.includes(window.location.pathname)) {
+      log2console('subscribeEvents', `Disabled sidebar for this path: ${window.location.pathname}`);
       contentContainer.classList.add('hideSidebar');
       sidebar.classList.add('hide');
     }
   }
 }
 
-function watchLocationChange() {
-  setTimeout(() => {
-    window.addEventListener('location-changed', () => {
-      const root = getRoot();
-      if (!root) return; // location changed before finishing dom rendering
-      const appLayout = root.shadowRoot!.querySelector('div');
-      const customSidebarWrapper = appLayout!.querySelector('#customSidebarWrapper');
-      if (!customSidebarWrapper) {
-        buildSidebar();
-      } else {
-        const customSidebar = customSidebarWrapper.querySelector('#customSidebar');
-        if (!customSidebar) {
-          buildSidebar();
-        }
-      }
-    });
-  }, 1000);
-}
-
-// build the custom sidebar card
-async function buildCard(sidebar: HTMLElement, config: SidebarConfig) {
-  const sidebarCard = document.createElement('sidebar-card') as SidebarCard;
-  sidebarCard.setConfig(config);
-  sidebarCard.hass = hass();
-
-  sidebar.appendChild(sidebarCard);
-}
-
-// non-blocking sleep function
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// gets the lovelace config
-async function getConfig() {
-  let ll: HTMLElement | null = null;
-  while (!ll) {
-    ll = get_lovelace();
-    if (!ll) {
-      await sleep(500);
+async function watchLocationChange() {
+  window.addEventListener('location-changed', () => {
+    const root = getRoot();
+    if (!root) return; // location changed before finishing dom rendering
+    const appLayout = root.shadowRoot!.querySelector('div');
+    const customSidebarWrapper = appLayout!.querySelector('#customSidebarWrapper');
+    if (!customSidebarWrapper) {
+      buildSidebar();
     }
-  }
-
-  return ll;
+  });
 }
 
 // ##########################################################################################
@@ -1095,95 +682,82 @@ async function getConfig() {
 // ##########################################################################################
 
 async function buildSidebar() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lovelace: any = await getConfig();
 
-  if (lovelace.config.sidebar) {
-    const sidebarConfig = Object.assign({}, lovelace.config.sidebar);
-    if (!sidebarConfig.width || 
-      (sidebarConfig.width && typeof sidebarConfig.width == 'number' && 
-        sidebarConfig.width > 0 && sidebarConfig.width < 100) 
-      || (sidebarConfig.width && typeof sidebarConfig.width == 'object')) {
-      const root = getRoot();
-      const hassSidebar = getSidebar();
-      const appDrawerLayout = getAppDrawerLayout();
-      const appDrawer = getAppDrawer();
-      const offParam = getParameterByName('sidebarOff');
+  if (lovelace && lovelace.config.sidebar) {
+    const sidebarConfig: SidebarConfig = Object.assign({}, DEFAULT_CONFIG, lovelace.config.sidebar);
+    const root = getRoot();
+    const hassSidebar = getSidebar();
+    const appDrawerLayout = getAppDrawerLayout();
+    const appDrawer = getAppDrawer();
+    const offParam = getParameterByName('sidebarOff');
 
-      if (sidebarConfig.hideTopMenu && sidebarConfig.hideTopMenu === true && offParam == null) {
-        if (root.shadowRoot!.querySelector('ch-header')) root.shadowRoot!.querySelector<HTMLElement>('ch-header')!.style.display = 'none';
-        if (root.shadowRoot!.querySelector('app-header')) root.shadowRoot!.querySelector<HTMLElement>('app-header')!.style.display = 'none';
-        if (root.shadowRoot!.querySelector('ch-footer')) root.shadowRoot!.querySelector<HTMLElement>('ch-footer')!.style.display = 'none';
-        if (root.shadowRoot!.getElementById('view')) root.shadowRoot!.getElementById('view')!.style.minHeight = 'calc(100vh)';
-      }
-      if (sidebarConfig.hideHassSidebar && sidebarConfig.hideHassSidebar === true && offParam == null) {
-        if (hassSidebar) {
-          hassSidebar.style.display = 'none';
-        }
-        if (appDrawerLayout) {
-          appDrawerLayout.style.marginLeft = '0';
-          appDrawerLayout.style.paddingLeft = '0';
-        }
-        if (appDrawer) {
-          appDrawer.style.display = 'none';
-        }
-      }
-      if (!sidebarConfig.breakpoints) {
-        sidebarConfig.breakpoints = {
-          tablet: 1024,
-          mobile: 768,
-        };
-      } else if (sidebarConfig.breakpoints) {
-        if (!sidebarConfig.breakpoints.mobile) {
-          sidebarConfig.breakpoints.mobile = 768;
-        }
-        if (!sidebarConfig.breakpoints.tablet) {
-          sidebarConfig.breakpoints.tablet = 1024;
-        }
-      }
-
-      const appLayout = root.shadowRoot!.querySelector<HTMLElement>('div');
-      const css = createCSS(sidebarConfig, document.body.clientWidth);
-      const style: HTMLStyleElement = document.createElement<'style'>('style');
-      style.setAttribute('id', 'customSidebarStyle');
-      appLayout!.appendChild(style);
-      // style.type = 'text/css';
-      style.appendChild(document.createTextNode(css));
-      // get element to wrap
-      const contentContainer = appLayout!.querySelector('#view');
-      // create wrapper container
-      const wrapper = document.createElement('div');
-      wrapper.setAttribute('id', 'customSidebarWrapper');
-      // insert wrapper before el in the DOM tree
-      contentContainer!.parentNode!.insertBefore(wrapper, contentContainer);
-      // move el into wrapper
-      const sidebar = document.createElement('div');
-      sidebar.setAttribute('id', 'customSidebar');
-      wrapper.appendChild(sidebar);
-      if (contentContainer) {
-        wrapper.appendChild(contentContainer);
-      }
-      await buildCard(sidebar, sidebarConfig);
-      //updateStyling(appLayout, sidebarConfig);
-      subscribeEvents(appLayout!, sidebarConfig, contentContainer!, sidebar);
-      setTimeout(() => {
-        updateStyling(appLayout!, sidebarConfig);
-      }, 1);
-    } else {
-      error2console('buildSidebar', 'Error sidebar in width config!');
+    if (sidebarConfig.hideTopMenu === true && offParam == null) {
+      if (root.shadowRoot!.querySelector('ch-header'))
+        root.shadowRoot!.querySelector<HTMLElement>('ch-header')!.style.display = 'none';
+      if (root.shadowRoot!.querySelector('app-header'))
+        root.shadowRoot!.querySelector<HTMLElement>('app-header')!.style.display = 'none';
+      if (root.shadowRoot!.querySelector('ch-footer'))
+        root.shadowRoot!.querySelector<HTMLElement>('ch-footer')!.style.display = 'none';
+      if (root.shadowRoot!.getElementById('view'))
+        root.shadowRoot!.getElementById('view')!.style.minHeight = 'calc(100vh)';
     }
+    if (sidebarConfig.hideHassSidebar === true && offParam == null) {
+      if (hassSidebar) {
+        hassSidebar.style.display = 'none';
+      }
+      if (appDrawerLayout) {
+        appDrawerLayout.style.marginLeft = '0';
+        appDrawerLayout.style.paddingLeft = '0';
+      }
+      if (appDrawer) {
+        appDrawer.style.display = 'none';
+      }
+    }
+    const sidebarCard = document.createElement('sidebar-card') as SidebarCard;
+    sidebarCard.hass = hass();
+    sidebarCard.setConfig(sidebarConfig);
+
+    const appLayout = root.shadowRoot!.querySelector<HTMLElement>('div');
+    const css = sidebarCard.createCSS(document.body.clientWidth);
+    const style: HTMLStyleElement = document.createElement<'style'>('style');
+    style.setAttribute('id', 'customSidebarStyle');
+    appLayout!.appendChild(style);
+    // style.type = 'text/css';
+    style.appendChild(document.createTextNode(css));
+    // get element to wrap
+    const contentContainer = appLayout!.querySelector('#view');
+    // create wrapper container
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('id', 'customSidebarWrapper');
+    // insert wrapper before el in the DOM tree
+    contentContainer?.parentNode!.insertBefore(wrapper, contentContainer);
+    // move el into wrapper
+    const sidebar = document.createElement('div');
+    sidebar.setAttribute('id', 'customSidebar');
+    sidebar.appendChild(sidebarCard);
+    wrapper.appendChild(sidebar);
+    if (contentContainer) {
+      wrapper.appendChild(contentContainer);
+    }
+    //updateStyling(appLayout, sidebarConfig);
+    subscribeEvents(appLayout!, sidebarCard, contentContainer!, sidebar);
+    updateStyling(appLayout!, sidebarCard);
   } else {
     log2console('buildSidebar', 'No sidebar in config found!');
   }
 }
 
-  // show console message on init
-console.info(
-  `%c  ${SIDEBAR_CARD_TITLE.padEnd(24)}%c
-  Version: ${SIDEBAR_CARD_VERSION.padEnd(9)}      `,
-  'color: chartreuse; background: black; font-weight: 700;',
-  'color: white; background: dimgrey; font-weight: 700;'
-);
-
+if (!customElements.get("sidebar-card")) {
+  customElements.define('sidebar-card', SidebarCard);
+  console.info(
+    `%c  ${SIDEBAR_CARD_TITLE.padEnd(24)}%c
+    Version: ${SIDEBAR_CARD_VERSION.padEnd(9)}      `,
+    'color: chartreuse; background: black; font-weight: 700;',
+    'color: white; background: dimgrey; font-weight: 700;'
+    );
+}
 
 await buildSidebar();
-watchLocationChange();
+await watchLocationChange();
