@@ -95,7 +95,7 @@ class SidebarCard extends LitElement {
 
   set hass(hass: HomeAssistant) {
     this._hass = hass;
-    this.cards?.forEach((e) => (e.hass = hass));
+    this.cards?.forEach((e) => {e.hass = hass});
   }
 
   /**
@@ -195,7 +195,7 @@ class SidebarCard extends LitElement {
               <ul class="template">
                 ${this.templateLines.map((line) => {
                   return html`
-                    <li>${line}</li>
+                    ${createElementFromHTML(line)}
                   `;
                   })}
               </ul>
@@ -346,10 +346,9 @@ class SidebarCard extends LitElement {
     if (this.config.template) {
       subscribeRenderTemplate(
         null,
-        (res: string) => {
-          this.templateLines = res.match(/<li>([^]*?)<\/li>/g)!.map(function (val: string) {
-            return val.replace(/<\/?li>/g, '');
-          });
+        (res) => {
+          const regex = /<(?:li|div)(?:\s+(?:class|id)\s*=\s*"([^"]*)")*\s*>([^<]*)<\/(?:li|div)>/g
+          this.templateLines = res.match(regex).map( (val) => val);
           this.requestUpdate();
         },
         {
@@ -675,6 +674,12 @@ async function watchLocationChange() {
       buildSidebar();
     }
   });
+}
+
+function createElementFromHTML(htmlString: string) {
+  const div = document.createElement('div');
+  div.innerHTML = htmlString.trim();
+  return div.firstChild;
 }
 
 // ##########################################################################################
