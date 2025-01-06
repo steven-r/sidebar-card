@@ -6,5 +6,5 @@ export const SIDEBAR_CARD_TITLE = 'SIDEBAR-CARD';// ----------------------------
 // ------------------------------------------------------------------------------------------
 //  https://github.com/steven-r/sidebar-card
 // ------------------------------------------------------------------------------------------
-export const SIDEBAR_CARD_VERSION = '0.1.10.0.1';
+export const SIDEBAR_CARD_VERSION = '0.1.10.0.2';
 

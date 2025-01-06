@@ -20,6 +20,8 @@ import { SIDEBAR_CARD_VERSION } from './config';
 // ###   The actual Sidebar Card element
 // ##########################################################################################
 
+const TEMPLATE_LINE_REGEX = /<(?:li|div)(?:\s+(?:class|id)\s*=\s*"([^"]*)")*\s*>([^<]*)<\/(?:li|div)>/g;
+
 interface LovelaceElement extends HTMLElement {
   hass: HomeAssistant;
   setConfig(config: object): void;
@@ -63,9 +65,11 @@ interface SidebarConfig {
   breakpoints?: BreakpointConfig;
   width?: number | WidthConfig;
   hideOnPath?: string[];
-  cards?: ItemNumberList[];
   template?: string;
   title?: string;
+  cards?: ItemNumberList[];
+  entity_ids?: string[];
+  bottom_card?: ItemNumberList;
 }
 
 class SidebarCard extends LitElement {
@@ -77,21 +81,12 @@ class SidebarCard extends LitElement {
   @state() current_date!: string;
   @state() current_time!: string;
   @property() templateLines: string[] = [];
-  @property() cards!: LovelaceElement[];
+  @property() cards: LovelaceElement[] = [];
+  @property() bottomCard?: LovelaceElement = undefined;
 
   _hass!: HomeAssistant;
 
   CUSTOM_TYPE_PREFIX = 'custom:';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _helpers: any = null;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async loadCardHelpers(): Promise<any> {
-    if (this._helpers) return this._helpers;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this._helpers = await (window as any).loadCardHelpers();
-    return this._helpers;
-  }
 
   set hass(hass: HomeAssistant) {
     this._hass = hass;
@@ -147,7 +142,6 @@ class SidebarCard extends LitElement {
 
   render() {
     const title = this.config.title ?? false;
-
     return html`
       ${this.config.style
         ? html`
@@ -185,11 +179,6 @@ class SidebarCard extends LitElement {
               <h2 class="date">${this.current_date}</h2>
             `
         : html``}
-        ${this.cards && this.cards.length > 0
-        ? html`<div class="sidebarcards">
-            ${this.cards.map(c => html`<div>${c}</div>`)}
-          </div>`
-        : html``}
         ${this.config.template
         ? html`
               <ul class="template">
@@ -201,18 +190,71 @@ class SidebarCard extends LitElement {
               </ul>
             `
         : html``}
+        ${this.cards && this.cards.length > 0
+        ? html`<div class="sidebarcards">
+            ${this.cards.map(c => html`<div>${c}</div>`)}
+          </div>`
+        : html``}
+        ${this.bottomCard
+          ? html`
+              <div class="bottom">${this.bottomCard}</div>
+            `
+          : html``}
       </div>
     `;
   }
 
   async updated(changedProperties) {
     super.updated(changedProperties);
+    log2console("updated", "what?", changedProperties);
     if (changedProperties.has("open")) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((this as any)._cardMod)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any)._cardMod.forEach((cm) => cm.refresh());
     }
+    if (this.config.cards && this.cards.length == 0) {
+      await this._createCards();
+      await this.updateComplete;
+      this.requestUpdate();
+    }
+    if (this.config.bottom_card && this.bottomCard == undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cardHelpers = await (window as any).loadCardHelpers();
+      this.bottomCard = this._createCard(this.config.bottom_card, cardHelpers);
+      await this.updateComplete;
+      this.requestUpdate();
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _createCard(cardConfig: ItemNumberList, cardHelpers: any): LovelaceElement {
+    const el = cardHelpers.createCardElement(cardConfig);
+    el.addEventListener("ll-rebuild", (ev: Event) => {
+      ev.stopPropagation();
+      this._rebuildCard(el, cardConfig);
+    });
+    el.hass = this._hass;
+    el.setConfig?.(cardConfig);
+    return el;
+  }
+
+  async _createCards() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cardHelpers = await (window as any).loadCardHelpers();
+    this.cards = this.config.cards!.map((cardConfig) => {
+      return this._createCard(cardConfig, cardHelpers);
+    });
+  }
+
+  async _rebuildCard(el: LovelaceElement, cardConfig: ItemNumberList) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cardHelpers = await (window as any).loadCardHelpers();
+    const newEl = this._createCard(cardConfig, cardHelpers);
+    if (el.parentElement) {
+      el.parentElement.replaceChild(newEl, el);
+    }
+    this.cards = this.cards.map((card) => (card === el ? newEl : card));
   }
 
   _runClock() {
@@ -320,18 +362,6 @@ class SidebarCard extends LitElement {
       this.updateSidebarSize();
     }, 1);
     window.addEventListener('resize', () => this.updateSidebarSize(), true);
-
-    if (this.config.cards) {
-      this.cards = await Promise.all(this.config.cards.map(async (card): Promise<LovelaceElement> => {
-        await this.loadCardHelpers();
-        const cardElement = await this._helpers.createCardElement(card);
-        cardElement.hass = this._hass;
-        cardElement.setConfig(card);
-        log2console('_finishSetup', 'add card: ', cardElement);
-        return cardElement;
-      }));
-      this.requestUpdate("cards");
-    }
   }
 
 
@@ -347,13 +377,13 @@ class SidebarCard extends LitElement {
       subscribeRenderTemplate(
         null,
         (res) => {
-          const regex = /<(?:li|div)(?:\s+(?:class|id)\s*=\s*"([^"]*)")*\s*>([^<]*)<\/(?:li|div)>/g
-          this.templateLines = res.match(regex).map( (val) => val);
+          this.templateLines = res.match(TEMPLATE_LINE_REGEX).map( (val) => val);
           this.requestUpdate();
         },
         {
           template: this.config.template,
           variables: { config: this.config },
+          entity_ids: this.config.entity_ids,
         }
       );
     }
@@ -433,12 +463,12 @@ class SidebarCard extends LitElement {
         cursor: default;
       }
       .template {
-        margin: 0;
-        padding: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        margin: 20px 0 0 0;
+        padding: 20px 0 0 0;
         list-style: none;
         color: var(--sidebar-text-color, #000);
       }
-
       .template li {
         display: block;
         color: inherit;
@@ -447,7 +477,6 @@ class SidebarCard extends LitElement {
         font-weight: 300;
         white-space: normal;
       }
-
       .clock {
         margin: 20px 0;
         position: relative;
@@ -459,7 +488,6 @@ class SidebarCard extends LitElement {
         border: 5px solid var(--face-border-color, #fff);
         box-shadow: inset 2px 3px 8px 0 rgba(0, 0, 0, 0.1);
       }
-
       .clock .wrap {
         overflow: hidden;
         position: absolute;
@@ -469,7 +497,6 @@ class SidebarCard extends LitElement {
         height: 100%;
         border-radius: 100%;
       }
-
       .clock .minute,
       .clock .hour {
         position: absolute;
@@ -486,7 +513,6 @@ class SidebarCard extends LitElement {
         box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.4);
         z-index: 1;
       }
-
       .clock .minute {
         position: absolute;
         height: 41%;
@@ -496,7 +522,6 @@ class SidebarCard extends LitElement {
         box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.4);
         transform: rotate(90deg);
       }
-
       .clock .second {
         position: absolute;
         top: -48%;
@@ -512,7 +537,6 @@ class SidebarCard extends LitElement {
         transform: rotate(180deg);
         z-index: 1;
       }
-
       .clock .dot {
         position: absolute;
         top: 0;
@@ -528,7 +552,6 @@ class SidebarCard extends LitElement {
         margin: auto;
         z-index: 1;
       }
-
       .bottom {
         display: flex;
         margin-top: auto;
