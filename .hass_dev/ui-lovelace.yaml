@@ -3,18 +3,35 @@ title: Home Assistant Demo
 sidebar:
   clock: digital
   date: true
-  width: 25
+  debug: true
+  template: |
+    <li>
+      {% if now().hour  < 5 %} Goede nacht {{'\U0001F634'}}
+      {% elif now().hour < 12 %} Goedemorgen {{'\u2615\uFE0F'}}
+      {% elif now().hour < 18 %} Goedenmiddag {{'\U0001F44B\U0001F3FB'}}
+      {% else %} Goedenavond {{'\U0001F44B\U0001F3FB'}}{% endif %}
+    </li>
+    {% if "Vandaag" in states('sensor.blink_gft') %} <li>Vandaag groenebak aan de straat</li> {% endif %}
+    {% if "Vandaag" in states('sensor.blink_papier') %} <li>Vandaag oudpapier aan de straat</li> {% endif %}
+    {% if "Vandaag" in states('sensor.blink_pmd') %} <li>Vandaag plastic aan de straat</li> {% endif %}
+    {% if "Vandaag" in states('sensor.blink_restafval') %} <li>Vandaag grijzebak aan de straat</li> {% endif %}
+    {% if "Morgen" in states('sensor.blink_gft') %} <li>Morgen groenebak aan de straat</li> {% endif %}
+    {% if "Morgen" in states('sensor.blink_papier') %} <li>Morgen oudpapier aan de straat</li> {% endif %}
+    {% if "Morgen" in states('sensor.blink_pmd') %} <li>Morgen plastic aan de straat</li> {% endif %}
+    {% if "Morgen" in states('sensor.blink_restafval') %} <li>Morgen grijzebak aan de straat</li> {% endif %}
+
   cards:
     - type: entity
       entity: light.bed_light
       name: "Bad"
       tap_action: 
         action: toggle
-    - show_current: true
-      show_forecast: false
-      type: weather-forecast
-      entity: weather.demo_weather_south
-      forecast_type: daily
+    - type: entity
+      entity: sun.sun
+      name: "Sonne"
+  bottom_card:
+    type: entity
+    entity: sensor.moon_phase
 
 views:
   - type: sections
